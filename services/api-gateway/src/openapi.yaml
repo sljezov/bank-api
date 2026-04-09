@@ -41,6 +41,10 @@ paths:
                   database:
                     type: string
                     example: connected
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-04-09T12:00:00Z"
         '503':
           description: Service is unhealthy
           content:
@@ -54,6 +58,10 @@ paths:
                   database:
                     type: string
                     example: disconnected
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-04-09T12:00:00Z"
 
   /users:
     post:

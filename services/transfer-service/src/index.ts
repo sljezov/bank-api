@@ -109,6 +109,10 @@ app.post('/transfers', async (req, res) => {
     return res.status(400).json({ code: 'INVALID_REQUEST', message: 'Amount must be a positive decimal with 2 decimal places' });
   }
 
+  if (sourceAccount === destinationAccount) {
+    return res.status(400).json({ code: 'SAME_ACCOUNT', message: 'Source and destination accounts cannot be the same' });
+  }
+
   // Check for idempotency
   const existing = await pool.query(
     'SELECT transfer_id, status FROM transfers.transfers WHERE transfer_id = $1',

@@ -52,9 +52,9 @@ app.use(express.static(path.join(process.cwd(), 'public')));
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', database: 'connected', timestamp: new Date().toISOString() });
   } catch (err) {
-    res.status(503).json({ status: 'unhealthy', timestamp: new Date().toISOString() });
+    res.status(503).json({ status: 'unhealthy', database: 'disconnected', timestamp: new Date().toISOString() });
   }
 });
 
@@ -66,12 +66,16 @@ app.get('/api-docs.json', (_req, res) => {
   res.json(swaggerDocument);
 });
 
+app.get('/api/v1/api-docs.json', (_req, res) => {
+  res.json(swaggerDocument);
+});
+
 app.get('/api/v1/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', database: 'connected', timestamp: new Date().toISOString() });
   } catch (err) {
-    res.status(503).json({ status: 'unhealthy', timestamp: new Date().toISOString() });
+    res.status(503).json({ status: 'unhealthy', database: 'disconnected', timestamp: new Date().toISOString() });
   }
 });
 
