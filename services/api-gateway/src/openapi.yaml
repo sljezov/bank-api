@@ -1,0 +1,617 @@
+openapi: 3.0.3
+info:
+  title: EST001 Branch Bank API
+  description: |
+    Branch bank API for user-facing operations in the distributed banking system.
+    This API allows users to register with a branch bank, create accounts with chosen
+    currencies, perform unauthenticated account lookups to verify ownership, and
+    initiate same-bank and cross-bank fund transfers.
+
+    **Bank ID:** EST001
+    **Supported currencies:** EUR, USD, GBP, SEK, LVL, EEK
+
+    **Rate limiting:** 100 requests per minute per IP address. Exceeding this returns `429 Too Many Requests`.
+    Health check (`/health`) and Swagger UI (`/api-docs`) are exempt from rate limiting.
+  version: 1.0.0
+
+servers:
+  - url: http://89.167.117.189:3000/api/v1
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: |
+        Returns service health status. Used by the central bank to verify reachability during registration.
+        Also available at `/api/v1/health` (same response).
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  database:
+                    type: string
+                    example: connected
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+                  database:
+                    type: string
+                    example: disconnected
+
+  /users:
+    post:
+      summary: Register a new user
+      description: Creates a new user account and returns an API token for authentication
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fullName
+              properties:
+                fullName:
+                  type: string
+                  minLength: 2
+                  example: "Jane Doe"
+                email:
+                  type: string
+                  format: email
+                  example: "jane@example.com"
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                    example: "user-550e8400-e29b-41d4-a716-446655440000"
+                  fullName:
+                    type: string
+                    example: "Jane Doe"
+                  email:
+                    type: string
+                    example: "jane@example.com"
+                  createdAt:
+                    type: string
+                    format: date-time
+                  token:
+                    type: string
+                    description: Bearer token for authentication
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/{userId}:
+    get:
+      summary: Get user information
+      description: Retrieves user details by user ID
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "user-550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  fullName:
+                    type: string
+                  email:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/{userId}/accounts:
+    post:
+      summary: Create an account
+      description: Creates a new bank account for the authenticated user. Account number will be prefixed with EST (our bank prefix).
+      tags:
+        - Accounts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "user-550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currency
+              properties:
+                currency:
+                  type: string
+                  description: "ISO 4217 currency code. Supported values: EUR, USD, GBP, SEK, LVL, EEK"
+                  enum: [EUR, USD, GBP, SEK, LVL, EEK]
+                  example: "EUR"
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountCreation'
+        '400':
+          description: Invalid request or unsupported currency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden — cannot create account for another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /accounts/{accountNumber}:
+    get:
+      summary: Lookup account
+      description: Public endpoint to look up account information by account number. No authentication required.
+      tags:
+        - Accounts
+      parameters:
+        - name: accountNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z0-9]{8}$'
+          example: "EST12345A"
+      responses:
+        '200':
+          description: Account found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accountNumber:
+                    type: string
+                    example: "EST12345A"
+                  ownerName:
+                    type: string
+                    example: "Jane Doe"
+                  currency:
+                    type: string
+                    example: "EUR"
+        '400':
+          description: Invalid account number format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /transfers:
+    post:
+      summary: Initiate a transfer
+      description: |
+        Initiates a funds transfer between accounts. Can be same-bank or cross-bank.
+        Same-bank transfers complete immediately. Cross-bank transfers may be
+        asynchronous with retry logic for up to 4 hours.
+
+        Currency conversion is applied automatically if source and destination accounts
+        use different currencies, using exchange rates from the central bank.
+      tags:
+        - Transfers
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transferId
+                - sourceAccount
+                - destinationAccount
+                - amount
+              properties:
+                transferId:
+                  type: string
+                  format: uuid
+                  description: Client-generated UUID for idempotency
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                sourceAccount:
+                  type: string
+                  pattern: '^[A-Z0-9]{8}$'
+                  description: Sender's account number (must belong to authenticated user)
+                  example: "EST12345A"
+                destinationAccount:
+                  type: string
+                  pattern: '^[A-Z0-9]{8}$'
+                  description: Recipient's account number (same or other bank)
+                  example: "AKB5FPC8"
+                amount:
+                  type: string
+                  pattern: '^\d+\.\d{2}$'
+                  description: Amount with exactly 2 decimal places
+                  example: "100.00"
+      responses:
+        '201':
+          description: Transfer initiated or completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400':
+          description: Invalid request or transfer permanently failed (funds refunded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Source account does not belong to authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Account or destination bank not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: |
+            Duplicate transfer ID. Two distinct cases:
+            - `DUPLICATE_TRANSFER` — transfer with this ID already exists and is completed or failed
+            - `TRANSFER_ALREADY_PENDING` — transfer with this ID is currently pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded (100 req/min per IP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Destination bank temporarily unavailable — transfer queued for retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferPending'
+
+  /transfers/receive:
+    post:
+      summary: Receive inter-bank transfer
+      description: |
+        Endpoint for receiving transfers from other banks. No Bearer token required —
+        authentication is performed via ES256 JWT signature verification using the
+        sending bank's public key fetched from the central bank registry.
+      tags:
+        - Transfers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - jwt
+              properties:
+                jwt:
+                  type: string
+                  description: ES256-signed JWT from the sending bank
+      responses:
+        '200':
+          description: Transfer received and credited successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transferId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [completed]
+                  destinationAccount:
+                    type: string
+                  amount:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Missing or malformed JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid JWT signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Destination account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api-docs.json:
+    get:
+      summary: OpenAPI spec (JSON)
+      description: Returns this OpenAPI specification as JSON.
+      tags:
+        - System
+      responses:
+        '200':
+          description: OpenAPI spec
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /transfers/{transferId}:
+    get:
+      summary: Get transfer status
+      description: Retrieves the status of a previously submitted transfer
+      tags:
+        - Transfers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: transferId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Transfer found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferStatus'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Transfer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: Transfer timed out (failed_timeout status)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+components:
+  responses:
+    RateLimited:
+      description: Rate limit exceeded (100 requests per minute per IP)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: Too many requests. Please try again later.
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: UUID
+      description: API token received upon user registration
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "INVALID_REQUEST"
+        message:
+          type: string
+          example: "Invalid request parameters"
+
+    AccountCreation:
+      type: object
+      properties:
+        accountNumber:
+          type: string
+          example: "EST12345A"
+        ownerId:
+          type: string
+          example: "user-550e8400-e29b-41d4-a716-446655440000"
+        currency:
+          type: string
+          example: "EUR"
+        balance:
+          type: string
+          example: "0.00"
+        createdAt:
+          type: string
+          format: date-time
+
+    TransferResponse:
+      type: object
+      properties:
+        transferId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [completed, pending, failed]
+        sourceAccount:
+          type: string
+        destinationAccount:
+          type: string
+        amount:
+          type: string
+        convertedAmount:
+          type: string
+          description: Amount in destination currency after conversion (if currencies differ)
+        exchangeRate:
+          type: string
+          description: Exchange rate used for conversion (6 decimal places)
+        rateCapturedAt:
+          type: string
+          format: date-time
+          description: Timestamp when exchange rate was fetched from central bank
+        timestamp:
+          type: string
+          format: date-time
+
+    TransferPending:
+      description: Returned when destination bank is unavailable and transfer has been queued for retry
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            transferId:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [pending]
+            sourceAccount:
+              type: string
+            destinationAccount:
+              type: string
+            amount:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+
+    TransferStatus:
+      allOf:
+        - $ref: '#/components/schemas/TransferResponse'
+        - type: object
+          properties:
+            pendingSince:
+              type: string
+              format: date-time
+            nextRetryAt:
+              type: string
+              format: date-time
+              description: Next scheduled retry (for pending cross-bank transfers)
+            retryCount:
+              type: integer
+              description: Number of delivery attempts made
+            errorMessage:
+              type: string
+              description: Failure reason (if applicable)

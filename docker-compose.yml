@@ -1,0 +1,199 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bank
+      POSTGRES_PASSWORD: bank
+      POSTGRES_DB: bank
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+
+  # Multiple user-service instances
+  user-service-1:
+    build:
+      context: ./services/user-service
+    environment:
+      PORT: "3001"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "users"
+
+  user-service-2:
+    build:
+      context: ./services/user-service
+    environment:
+      PORT: "3001"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "users"
+
+  user-service-3:
+    build:
+      context: ./services/user-service
+    environment:
+      PORT: "3001"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "users"
+
+  # Multiple account-service instances
+  account-service-1:
+    build:
+      context: ./services/account-service
+    environment:
+      PORT: "3002"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "accounts"
+      USER_SERVICE_URL: "http://user-service-lb:80"
+    depends_on:
+      - user-service-lb
+
+  account-service-2:
+    build:
+      context: ./services/account-service
+    environment:
+      PORT: "3002"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "accounts"
+      USER_SERVICE_URL: "http://user-service-lb:80"
+    depends_on:
+      - user-service-lb
+
+  bank-sync-service:
+    restart: unless-stopped
+    build:
+      context: ./services/bank-sync-service
+    environment:
+      PORT: "3004"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "bank_sync"
+      REDIS_URL: "redis://redis:6379"
+      CENTRAL_BANK_URL: "https://test.diarainfra.com/central-bank"
+      BANK_NAME: "Test Branch Bank"
+      BANK_PUBLIC_URL: "http://89.167.117.189:3000"
+      ACCOUNT_SERVICE_URL: "http://account-service-lb:80"
+
+  # Multiple transfer-service instances
+  transfer-service-1:
+    build:
+      context: ./services/transfer-service
+    environment:
+      PORT: "3003"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "transfers"
+      REDIS_URL: "redis://redis:6379"
+      ACCOUNT_SERVICE_URL: "http://account-service-lb:80"
+      BANK_SYNC_SERVICE_URL: "http://bank-sync-service:3004"
+    depends_on:
+      - account-service-lb
+      - bank-sync-service
+
+  transfer-service-2:
+    build:
+      context: ./services/transfer-service
+    environment:
+      PORT: "3003"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      DB_SCHEMA: "transfers"
+      REDIS_URL: "redis://redis:6379"
+      ACCOUNT_SERVICE_URL: "http://account-service-lb:80"
+      BANK_SYNC_SERVICE_URL: "http://bank-sync-service:3004"
+    depends_on:
+      - account-service-lb
+      - bank-sync-service
+
+  # Multiple api-gateway instances
+  api-gateway-1:
+    build:
+      context: ./services/api-gateway
+    environment:
+      PORT: "3000"
+      INSTANCE_ID: "api-1"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      USER_SERVICE_URL: "http://user-service-lb:80"
+      ACCOUNT_SERVICE_URL: "http://account-service-lb:80"
+      TRANSFER_SERVICE_URL: "http://transfer-service-lb:80"
+      BANK_SYNC_SERVICE_URL: "http://bank-sync-service:3004"
+    volumes:
+      - ./services/api-gateway/src/openapi.yaml:/app/dist/openapi.yaml:ro
+    expose:
+      - "3000"
+
+  api-gateway-2:
+    build:
+      context: ./services/api-gateway
+    environment:
+      PORT: "3000"
+      INSTANCE_ID: "api-2"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      USER_SERVICE_URL: "http://user-service-lb:80"
+      ACCOUNT_SERVICE_URL: "http://account-service-lb:80"
+      TRANSFER_SERVICE_URL: "http://transfer-service-lb:80"
+      BANK_SYNC_SERVICE_URL: "http://bank-sync-service:3004"
+    volumes:
+      - ./services/api-gateway/src/openapi.yaml:/app/dist/openapi.yaml:ro
+    expose:
+      - "3000"
+
+  api-gateway-3:
+    build:
+      context: ./services/api-gateway
+    environment:
+      PORT: "3000"
+      INSTANCE_ID: "api-3"
+      DATABASE_URL: "postgresql://bank:bank@postgres:5432/bank"
+      USER_SERVICE_URL: "http://user-service-lb:80"
+      ACCOUNT_SERVICE_URL: "http://account-service-lb:80"
+      TRANSFER_SERVICE_URL: "http://transfer-service-lb:80"
+      BANK_SYNC_SERVICE_URL: "http://bank-sync-service:3004"
+    volumes:
+      - ./services/api-gateway/src/openapi.yaml:/app/dist/openapi.yaml:ro
+    expose:
+      - "3000"
+
+  # Load balancers
+  user-service-lb:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - user-service-1
+      - user-service-2
+      - user-service-3
+
+  account-service-lb:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/account-service-lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - account-service-1
+      - account-service-2
+
+  transfer-service-lb:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/transfer-service-lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - transfer-service-1
+      - transfer-service-2
+
+  api-gateway-lb:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./nginx/api-gateway-lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-gateway-1
+      - api-gateway-2
+      - api-gateway-3
+
+volumes:
+  postgres_data:

@@ -1,0 +1,12 @@
+{
+  "name": "bank",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "shared/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "docker compose up --build"
+  }
+}

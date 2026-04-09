@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bank-config
+  namespace: default
+data:
+  CENTRAL_BANK_URL: "https://test.diarainfra.com/central-bank"
+  BANK_NAME: "Test Branch Bank"
+  USER_SERVICE_URL: "http://user-service:3001"
+  ACCOUNT_SERVICE_URL: "http://account-service:3002"
+  TRANSFER_SERVICE_URL: "http://transfer-service:3003"
+  BANK_SYNC_SERVICE_URL: "http://bank-sync-service:3004"
+  REDIS_URL: "redis://redis:6379"

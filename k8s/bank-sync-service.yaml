@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-sync-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bank-sync-service
+  template:
+    metadata:
+      labels:
+        app: bank-sync-service
+    spec:
+      containers:
+        - name: bank-sync-service
+          image: bank-bank-sync-service:latest
+          ports:
+            - containerPort: 3004
+          env:
+            - name: PORT
+              value: "3004"
+            - name: DB_SCHEMA
+              value: bank_sync
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bank-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bank-secrets
+                  key: REDIS_URL
+            - name: CENTRAL_BANK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: bank-config
+                  key: CENTRAL_BANK_URL
+            - name: BANK_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: bank-config
+                  key: BANK_NAME
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-sync-service
+spec:
+  selector:
+    app: bank-sync-service
+  ports:
+    - port: 3004
+      targetPort: 3004

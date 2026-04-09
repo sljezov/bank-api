@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transfer-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transfer-service
+  template:
+    metadata:
+      labels:
+        app: transfer-service
+    spec:
+      containers:
+        - name: transfer-service
+          image: bank-transfer-service:latest
+          ports:
+            - containerPort: 3003
+          env:
+            - name: PORT
+              value: "3003"
+            - name: DB_SCHEMA
+              value: transfers
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bank-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bank-secrets
+                  key: REDIS_URL
+            - name: ACCOUNT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: bank-config
+                  key: ACCOUNT_SERVICE_URL
+            - name: BANK_SYNC_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: bank-config
+                  key: BANK_SYNC_SERVICE_URL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transfer-service
+spec:
+  selector:
+    app: transfer-service
+  ports:
+    - port: 3003
+      targetPort: 3003

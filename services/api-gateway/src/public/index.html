@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TES001 Bank</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #111; min-height: 100vh; }
+  header { background: #111; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.05em; }
+  #user-bar { font-size: 0.85rem; color: #aaa; }
+  #user-bar span { color: #fff; font-weight: 500; }
+  main { max-width: 560px; margin: 2rem auto; padding: 0 1rem; display: flex; flex-direction: column; gap: 1.5rem; }
+  section { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.25rem 1.5rem; }
+  section h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 1rem; }
+  .row { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
+  input, select { flex: 1; padding: 0.5rem 0.65rem; border: 1px solid #ddd; border-radius: 5px; font-size: 0.9rem; outline: none; }
+  input:focus, select:focus { border-color: #111; }
+  button { padding: 0.5rem 1rem; background: #111; color: #fff; border: none; border-radius: 5px; font-size: 0.9rem; cursor: pointer; white-space: nowrap; }
+  button:hover { background: #333; }
+  button:disabled { background: #aaa; cursor: default; }
+  .result { margin-top: 0.75rem; font-size: 0.85rem; color: #444; background: #f9f9f9; border: 1px solid #e8e8e8; border-radius: 5px; padding: 0.65rem 0.75rem; white-space: pre-wrap; word-break: break-all; display: none; }
+  .result.ok { border-color: #b6e0b6; background: #f0faf0; color: #1a5c1a; }
+  .result.err { border-color: #f0b6b6; background: #fdf0f0; color: #7a1a1a; }
+  .accounts-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+  .account-chip { display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 5px; padding: 0.45rem 0.75rem; font-size: 0.85rem; }
+  .account-chip .num { font-family: monospace; font-weight: 600; }
+  .account-chip .bal { color: #444; }
+  .account-chip .cur { color: #888; font-size: 0.75rem; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TES001 Bank</h1>
+  <div id="user-bar">not signed in</div>
+</header>
+<main>
+
+  <!-- Register / Login -->
+  <section id="section-auth">
+    <h2>Register</h2>
+    <div class="row">
+      <input id="reg-name" type="text" placeholder="Full name" />
+      <input id="reg-email" type="email" placeholder="Email (optional)" />
+    </div>
+    <div class="row">
+      <button id="btn-register">Register</button>
+    </div>
+    <div class="result" id="res-register"></div>
+  </section>
+
+  <!-- Accounts -->
+  <section id="section-accounts" class="hidden">
+    <h2>Accounts</h2>
+    <div class="accounts-list" id="accounts-list"></div>
+    <div class="row" style="margin-top:0.75rem">
+      <select id="new-account-currency">
+        <option value="EUR">EUR</option>
+        <option value="USD">USD</option>
+        <option value="GBP">GBP</option>
+        <option value="SEK">SEK</option>
+        <option value="LVL">LVL</option>
+        <option value="EEK">EEK</option>
+      </select>
+      <button id="btn-create-account">Open account</button>
+    </div>
+    <div class="result" id="res-account"></div>
+  </section>
+
+  <!-- Transfer -->
+  <section id="section-transfer" class="hidden">
+    <h2>Transfer</h2>
+    <div class="row">
+      <input id="tf-from" type="text" placeholder="From account (8 chars)" maxlength="8" style="text-transform:uppercase" />
+      <input id="tf-to" type="text" placeholder="To account (8 chars)" maxlength="8" style="text-transform:uppercase" />
+    </div>
+    <div class="row">
+      <input id="tf-amount" type="text" placeholder="Amount (e.g. 10.00)" />
+      <button id="btn-transfer">Send</button>
+    </div>
+    <div class="result" id="res-transfer"></div>
+  </section>
+
+  <!-- Lookup -->
+  <section>
+    <h2>Account lookup</h2>
+    <div class="row">
+      <input id="lookup-num" type="text" placeholder="Account number (8 chars)" maxlength="8" style="text-transform:uppercase" />
+      <button id="btn-lookup">Look up</button>
+    </div>
+    <div class="result" id="res-lookup"></div>
+  </section>
+
+</main>
+
+<script>
+const API = '/api/v1';
+let token = localStorage.getItem('bank_token') || '';
+let userId = localStorage.getItem('bank_userId') || '';
+let userName = localStorage.getItem('bank_userName') || '';
+
+function show(el, cls, text) {
+  el.style.display = 'block';
+  el.className = 'result ' + cls;
+  el.textContent = text;
+}
+
+function headers() {
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) };
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, { method, headers: headers(), ...(body ? { body: JSON.stringify(body) } : {}) });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+function updateUserBar() {
+  const bar = document.getElementById('user-bar');
+  if (userName) {
+    bar.innerHTML = `Signed in as <span>${userName}</span>`;
+    document.getElementById('section-accounts').classList.remove('hidden');
+    document.getElementById('section-transfer').classList.remove('hidden');
+  } else {
+    bar.textContent = 'not signed in';
+    document.getElementById('section-accounts').classList.add('hidden');
+    document.getElementById('section-transfer').classList.add('hidden');
+  }
+}
+
+async function loadAccounts() {
+  if (!userId || !token) return;
+  const { ok, data } = await api('GET', `/users/${userId}`);
+  if (!ok) return;
+  // Fetch accounts — not in OpenAPI but we try
+  // Instead we just keep locally created ones
+  renderAccounts();
+}
+
+let accounts = JSON.parse(localStorage.getItem('bank_accounts') || '[]');
+
+function renderAccounts() {
+  const list = document.getElementById('accounts-list');
+  list.innerHTML = '';
+  if (accounts.length === 0) {
+    list.innerHTML = '<div style="font-size:0.85rem;color:#888">No accounts yet.</div>';
+    return;
+  }
+  accounts.forEach(a => {
+    const chip = document.createElement('div');
+    chip.className = 'account-chip';
+    chip.innerHTML = `<span class="num">${a.accountNumber}</span><span class="cur">${a.currency}</span><span class="bal">${a.balance}</span>`;
+    list.appendChild(chip);
+  });
+}
+
+// Register
+document.getElementById('btn-register').addEventListener('click', async () => {
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const res = document.getElementById('res-register');
+  if (!name) { show(res, 'err', 'Full name is required.'); return; }
+  const btn = document.getElementById('btn-register');
+  btn.disabled = true;
+  const { ok, data } = await api('POST', '/users', { fullName: name, ...(email ? { email } : {}) });
+  btn.disabled = false;
+  if (ok) {
+    token = data.token; userId = data.userId; userName = data.fullName;
+    localStorage.setItem('bank_token', token);
+    localStorage.setItem('bank_userId', userId);
+    localStorage.setItem('bank_userName', userName);
+    accounts = []; localStorage.setItem('bank_accounts', '[]');
+    updateUserBar();
+    renderAccounts();
+    show(res, 'ok', `Welcome, ${data.fullName}!\nUser ID: ${data.userId}\nToken saved.`);
+  } else {
+    show(res, 'err', data.message || JSON.stringify(data));
+  }
+});
+
+// Create account
+document.getElementById('btn-create-account').addEventListener('click', async () => {
+  const currency = document.getElementById('new-account-currency').value;
+  const res = document.getElementById('res-account');
+  const btn = document.getElementById('btn-create-account');
+  btn.disabled = true;
+  const { ok, data } = await api('POST', `/users/${userId}/accounts`, { currency });
+  btn.disabled = false;
+  if (ok) {
+    accounts.push({ accountNumber: data.accountNumber, currency: data.currency, balance: data.balance });
+    localStorage.setItem('bank_accounts', JSON.stringify(accounts));
+    renderAccounts();
+    show(res, 'ok', `Account created: ${data.accountNumber} (${data.currency})`);
+  } else {
+    show(res, 'err', data.message || JSON.stringify(data));
+  }
+});
+
+// Transfer
+document.getElementById('btn-transfer').addEventListener('click', async () => {
+  const from = document.getElementById('tf-from').value.trim().toUpperCase();
+  const to = document.getElementById('tf-to').value.trim().toUpperCase();
+  const amount = document.getElementById('tf-amount').value.trim();
+  const res = document.getElementById('res-transfer');
+  if (!from || !to || !amount) { show(res, 'err', 'All fields are required.'); return; }
+  const transferId = crypto.randomUUID();
+  const btn = document.getElementById('btn-transfer');
+  btn.disabled = true;
+  const { ok, data } = await api('POST', '/transfers', { transferId, sourceAccount: from, destinationAccount: to, amount });
+  btn.disabled = false;
+  if (ok) {
+    const lines = [`Status: ${data.status}`, `Transfer ID: ${data.transferId}`, `Amount: ${data.amount}${data.convertedAmount ? ` → ${data.convertedAmount} (rate: ${data.exchangeRate})` : ''}`];
+    show(res, 'ok', lines.join('\n'));
+    // refresh balance locally
+    accounts = accounts.map(a => a.accountNumber === from ? { ...a, balance: (parseFloat(a.balance) - parseFloat(amount)).toFixed(2) } : a);
+    localStorage.setItem('bank_accounts', JSON.stringify(accounts));
+    renderAccounts();
+  } else {
+    show(res, 'err', data.message || JSON.stringify(data));
+  }
+});
+
+// Lookup
+document.getElementById('btn-lookup').addEventListener('click', async () => {
+  const num = document.getElementById('lookup-num').value.trim().toUpperCase();
+  const res = document.getElementById('res-lookup');
+  if (num.length !== 8) { show(res, 'err', 'Account number must be 8 characters.'); return; }
+  const btn = document.getElementById('btn-lookup');
+  btn.disabled = true;
+  const { ok, data } = await api('GET', `/accounts/${num}`);
+  btn.disabled = false;
+  if (ok) {
+    show(res, 'ok', `${data.accountNumber}\nOwner: ${data.ownerName}\nCurrency: ${data.currency}`);
+  } else {
+    show(res, 'err', data.message || JSON.stringify(data));
+  }
+});
+
+// Init
+updateUserBar();
+renderAccounts();
+</script>
+</body>
+</html>
