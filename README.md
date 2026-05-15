@@ -8,6 +8,12 @@ A fully functional bank branch API built with a microservices architecture. Regi
 
 ---
 
+## Documentation
+
+- [INTEGRATIONS.md](https://github.com/sljezov/bank-integrations/blob/main/INTEGRATIONS.md) — Integratsioonide dokumentatsioon (liidestatud süsteemid, endpoint-id, turvalisus)
+
+---
+
 ## Technologies
 
 | Layer | Technology |
@@ -247,28 +253,27 @@ curl -X POST http://89.167.117.189:3000/api/v1/transfers \
 
 ## Test Results
 
-All endpoints tested against the OpenAPI spec:
+Run the automated test suite:
 
-| Endpoint | Test | Expected | Result |
-|---|---|---|---|
-| GET /health | Normal | 200 `{status,timestamp}` | PASS |
-| POST /users | New user | 201 + token | PASS |
-| POST /users | Duplicate email | 409 | PASS |
-| GET /users/:id | Authenticated | 200 | PASS |
-| GET /users/:id | No token | 401 | PASS |
-| POST /users/:id/accounts | EUR account | 201 EST-prefix | PASS |
-| POST /users/:id/accounts | Unsupported currency | 400 | PASS |
-| POST /users/:id/accounts | Wrong user | 403 | PASS |
-| GET /accounts/:num | Valid | 200 | PASS |
-| GET /accounts/:num | Invalid format | 400 | PASS |
-| GET /accounts/:num | Not found | 404 | PASS |
-| POST /transfers | Same-bank | 201 completed | PASS |
-| POST /transfers | Insufficient funds | 422 | PASS |
-| POST /transfers | Duplicate transferId | 409 | PASS |
-| GET /transfers/:id | Get status | 200 | PASS |
-| GET /transfers/:id | Not found | 404 | PASS |
-| POST /transfers/receive | Invalid JWT | 401 | PASS |
-| Rate limiting | >100 req/min | 429 | PASS |
+```bash
+bash test/api.test.sh [BASE_URL]
+# Default: http://89.167.117.189:3000/api/v1
+```
+
+**Latest results: 45 passed, 0 failed**
+
+| Section | Tests | Result |
+|---|---|---|
+| 1. Health | status+timestamp fields, 200 | PASS |
+| 2. User Registration | 201, token, 409 duplicate, 400 validation | PASS |
+| 3. Get User | 200, 401 no auth, 404 not found | PASS |
+| 4. Account Creation | 201 EST-prefix, 8-char format, 400/401/403 | PASS |
+| 5. Account Lookup | 200 no auth, 400 invalid format, 404 not found | PASS |
+| 6. Transfers | 201 completed, 409 duplicate, 422 funds, 400/401/403 | PASS |
+| 7. Transfer Status | 200, 404, 401 no auth | PASS |
+| 8. Receive Inter-bank | 400 missing JWT, 401 invalid JWT | PASS |
+| 9. API Documentation | /api-docs.json 200, Swagger UI 200 | PASS |
+| 10. Rate Limiting | 429 after >100 req/min | PASS |
 
 ### Central Bank Integration
 - Registered as **EST001** at `http://89.167.117.189:3000`
